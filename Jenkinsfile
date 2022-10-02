@@ -1,33 +1,35 @@
 pipeline {
-    agent any
-    environment {
-        AWS_ACCESS_KEY_ID = credentials('	AWSAccessKeyId')
-        AWS_SECRET_ACCESS_KEY = credentials('AWSSecretKey')
-    }
-    stages {
-        stage('Build') {
+	agent any
+	environment {
+	    AWS_ACCOUNT_ID="078007239164"
+		AWS_DEFAULT_REGION="ap-southeast-1"
+		IMAGE_REPO_NAME="my-app"
+		IMAGE_TAG="${env.BUILD_NUMBER}"
+		REPOSITORY_URI = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com"
+	}
+
+	stages {
+	    stage("Logging into AWS ECR") {
             steps {
-                sh 'echo "Building"'
-                sh 'echo $AWS_ACCESS_KEY_ID'
-                sh 'echo $AWS_SECRET_ACCESS_KEY'
+                withCredentials([aws(accessKeyVariable:'AWS_ACCESS_KEY_ID', credentialsId:'aws-credential',secretKeyVariable:'AWS_SECRET_ACCESS_KEY')]){
+                sh "aws ecr get-login-password --region ${AWS_DEFAULT_REGION} | docker login --username AWS --password-stdin ${REPOSITORY_URI}"
+               }
             }
         }
-        stage('Test') {
-            steps {
-                sh 'echo "Testing"'
-            }
-        }
-        stage('Publish') {
-            steps {
-                sh 'echo "Publishing"'
-            }
-            post {
-                success {
-                    sh 'echo "Deploying to EB"'
-                    sh 'sudo chmod 775 ./deploy_app.sh'
-                    sh './deploy_app.sh'
+
+        stage("Building image") {
+            steps{
+                script {
+                    dockerImage = docker.build("${IMAGE_REPO_NAME}:${IMAGE_TAG}")
                 }
             }
         }
-    }
+
+        stage("Pushing image to AWS ECR") {
+            steps{
+                sh "docker tag ${IMAGE_REPO_NAME}:${IMAGE_TAG} ${REPOSITORY_URI}/${IMAGE_REPO_NAME}:${IMAGE_TAG}"
+                sh "docker push ${REPOSITORY_URI}/${IMAGE_REPO_NAME}:${IMAGE_TAG}"
+            }
+        }
+	}
 }
